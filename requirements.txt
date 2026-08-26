@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+numpy>=1.26
+matplotlib>=3.8
+xarray>=2024.1
+netCDF4>=1.6
+Pillow>=10.2

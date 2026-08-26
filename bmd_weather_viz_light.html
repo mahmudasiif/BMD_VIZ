@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BMD Weather · বিএমডি আবহাওয়া</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* yr.no palette */
+  --accent:  #005B9A;
+  --accent2: #0072B5;
+  --rain:    #059B3E;
+  --temp:    #D44000;
+  --humid:   #006AB0;
+  --cloud:   #607D99;
+  --wind:    #1A3A6A;
+
+  --card:    #FFFFFF;
+  --border:  rgba(0, 0, 0, 0.10);
+  --shadow:  0 1px 6px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.05);
+  --r:       8px;
+  --txt:     #1A2333;
+  --muted:   #637183;
+  --mono:    'JetBrains Mono', monospace;
+}
+
+html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); overflow: hidden; }
+#map { position: absolute; inset: 0; z-index: 0; background: #e8eef5; }
+
+/* Data overlays crossfade smoothly between frames */
+.scalar-overlay { transition: opacity .4s ease; }
+
+/* yr.no-style card: flat white, no blur, subtle shadow */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* ── Header bar ─────────────────────────────────────── */
+#header {
+  position: absolute;
+  top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 900;
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 18px;
+  white-space: nowrap;
+}
+#hdr-logo {
+  font-size: 12px; font-weight: 600;
+  color: var(--accent); letter-spacing: .01em;
+}
+.hdr-div { width: 1px; height: 14px; background: rgba(0,0,0,0.12); flex-shrink: 0; }
+#hdr-run  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+#hdr-step { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--txt); min-width: 72px; text-align: center; }
+#hdr-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* ── Layer Rail — yr.no style ───────────────────────── */
+#layer-rail {
+  position: absolute;
+  top: 50%; right: 14px; transform: translateY(-50%);
+  z-index: 900;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 5px;
+}
+.layer-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  border: 1.5px solid transparent;
+  min-width: 56px;
+}
+.layer-btn:hover { background: #F0F4F8; }
+.layer-btn.active {
+  background: #EAF3FC;
+  border-color: var(--accent);
+}
+.layer-btn svg {
+  width: 20px; height: 20px; stroke: #9AAABB; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  transition: stroke .12s;
+}
+.layer-btn.active svg { stroke: var(--accent); }
+.layer-btn span {
+  font-size: 9px; font-weight: 600; color: #9AAABB;
+  letter-spacing: .06em; text-transform: uppercase; transition: color .12s;
+}
+.layer-btn.active span { color: var(--accent); }
+
+/* ── Timeline — yr.no style ─────────────────────────── */
+#timeline {
+  position: absolute;
+  bottom: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 900;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px 12px;
+  min-width: 500px; max-width: calc(100vw - 40px);
+}
+#play-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: var(--accent); color: #fff;
+  font-size: 11px; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, transform .1s;
+}
+#play-btn:hover { background: var(--accent2); }
+#play-btn:active { transform: scale(.93); }
+
+#step-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 3px; border-radius: 2px; background: #D8E3EC;
+  outline: none; cursor: pointer;
+}
+#step-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,91,154,.18); cursor: grab;
+}
+#step-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: none;
+}
+#tl-label {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  white-space: nowrap; flex-shrink: 0; min-width: 118px; text-align: right;
+}
+
+/* Playback-speed control */
+.tl-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+#speed-ctrl {
+  display: flex; align-items: center; gap: 7px;
+  flex-shrink: 0; color: var(--muted);
+}
+#speed-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 66px; height: 3px; border-radius: 2px; background: #D8E3EC;
+  outline: none; cursor: pointer;
+}
+#speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,91,154,.18); cursor: grab;
+}
+#speed-slider::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: none;
+}
+#speed-label {
+  font-family: var(--mono); font-size: 10px; color: var(--txt);
+  min-width: 26px; text-align: right;
+}
+
+/* ── Legend ─────────────────────────────────────────── */
+#legend {
+  position: absolute; bottom: 80px; left: 16px;
+  z-index: 900; padding: 11px 16px 10px;
+  display: none; min-width: 220px;
+}
+#legend-header {
+  display: flex; align-items: baseline; gap: 6px; margin-bottom: 9px;
+}
+#legend-title {
+  font-size: 10px; font-weight: 600; color: var(--txt);
+  letter-spacing: .05em; text-transform: uppercase;
+}
+#legend-unit {
+  font-size: 9px; color: var(--muted); font-family: var(--mono); letter-spacing: .02em;
+}
+#legend-bar {
+  height: 14px; border-radius: 6px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.15);
+  margin-bottom: 4px;
+}
+#legend-tick-row {
+  position: relative; height: 18px;
+}
+.lg-tick {
+  position: absolute; top: 0;
+  display: flex; flex-direction: column; align-items: center;
+  transform: translateX(-50%);
+}
+.lg-tick:first-child  { transform: translateX(0); align-items: flex-start; }
+.lg-tick:last-child   { transform: translateX(-100%); align-items: flex-end; }
+.lg-tick-line {
+  width: 1px; height: 4px; background: #C0CDD8; margin-bottom: 2px;
+}
+.lg-tick-val {
+  font-family: var(--mono); font-size: 9px; color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Info Card ──────────────────────────────────────── */
+#info-card {
+  position: absolute; z-index: 1000;
+  padding: 14px 16px 12px; display: none; min-width: 210px; pointer-events: none;
+}
+#info-card.visible { display: block; }
+#info-close {
+  position: absolute; top: 10px; right: 12px;
+  font-size: 14px; color: var(--muted); cursor: pointer; pointer-events: all;
+}
+#info-close:hover { color: var(--txt); }
+#info-card h3 {
+  font-size: 9px; font-weight: 600; color: var(--accent);
+  letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px;
+}
+.ir { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.ir + .ir { border-top: 1px solid #EEF2F6; }
+.ir-lbl { font-size: 11px; color: var(--muted); }
+.ir-val { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--txt); }
+
+/* ── Pin marker ─────────────────────────────────────── */
+.pin-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.pin-ring { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--accent); opacity: .5; }
+
+/* ── Loading ────────────────────────────────────────── */
+#loading {
+  position: absolute; inset: 0; z-index: 2000;
+  background: rgba(240,245,252,.94);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+}
+.spin { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(0,114,198,.15); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#load-txt { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── Responsive ─────────────────────────────────────── */
+@media (max-width: 640px) {
+  #layer-rail { top:auto; bottom:88px; right:50%; transform:translateX(50%); flex-direction:row; }
+  #header { top:6px; gap:8px; }
+}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spin"></div><div id="load-txt">Loading forecast data</div></div>
+<div id="map"></div>
+
+<!-- Header -->
+<div id="header" class="card">
+  <span id="hdr-logo">BMD WEATHER</span>
+  <div class="hdr-div"></div>
+  <span id="hdr-run">—</span>
+  <div class="hdr-div"></div>
+  <span id="hdr-step">T+000h</span>
+  <div class="hdr-div"></div>
+  <span id="hdr-time">—</span>
+</div>
+
+<!-- Layer Rail -->
+<div id="layer-rail" class="card">
+  <div class="layer-btn" id="btn-wind"     data-layer="wind"     style="--lc:#FFFFFF;--lc-r:255;--lc-g:255;--lc-b:255">
+    <svg viewBox="0 0 24 24"><path d="M3 8h12a4 4 0 0 0 0-8"/><path d="M3 16h16a4 4 0 0 1 0 8"/><line x1="3" y1="12" x2="10" y2="12"/></svg>
+    <span>Wind</span>
+  </div>
+  <div class="layer-btn" id="btn-rain"     data-layer="rain"     style="--lc:#04BE50;--lc-r:4;--lc-g:190;--lc-b:80">
+    <svg viewBox="0 0 24 24"><path d="M12 2C8 7 4 11 4 14.5a8 8 0 0 0 16 0C20 11 16 7 12 2z"/><line x1="9" y1="19" x2="7" y2="21"/><line x1="13" y1="19" x2="11" y2="21"/><line x1="17" y1="19" x2="15" y2="21"/></svg>
+    <span>Rain</span>
+  </div>
+  <div class="layer-btn" id="btn-temp"     data-layer="temp"     style="--lc:#FF6633;--lc-r:255;--lc-g:102;--lc-b:51">
+    <svg viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+    <span>Temp</span>
+  </div>
+  <div class="layer-btn" id="btn-humidity" data-layer="humidity" style="--lc:#0096DC;--lc-r:0;--lc-g:150;--lc-b:220">
+    <svg viewBox="0 0 24 24"><path d="M12 2C8 7 4 11 4 14.5a8 8 0 0 0 16 0C20 11 16 7 12 2z"/><line x1="8" y1="15" x2="16" y2="15"/></svg>
+    <span>RH 850</span>
+  </div>
+  <div class="layer-btn" id="btn-cloud"    data-layer="cloud"    style="--lc:#7B9EC0;--lc-r:123;--lc-g:158;--lc-b:192">
+    <svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+    <span>Cloud</span>
+  </div>
+</div>
+
+<!-- Legend -->
+<div id="legend" class="card">
+  <div id="legend-header">
+    <span id="legend-title">—</span>
+    <span id="legend-unit"></span>
+  </div>
+  <div id="legend-bar"></div>
+  <div id="legend-tick-row"></div>
+</div>
+
+<!-- Timeline -->
+<div id="timeline" class="card">
+  <button id="play-btn">▶</button>
+  <input type="range" id="step-slider" min="0" value="0">
+  <span id="tl-label">—</span>
+  <div class="tl-sep"></div>
+  <div id="speed-ctrl" title="Playback speed">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 13l3-3"/><path d="M9 3h6"/></svg>
+    <input type="range" id="speed-slider" min="0.5" max="4" step="0.5" value="1">
+    <span id="speed-label">1&times;</span>
+  </div>
+</div>
+
+<!-- Info Card -->
+<div id="info-card" class="card">
+  <span id="info-close">✕</span>
+  <h3>Point Forecast</h3>
+  <div class="ir"><span class="ir-lbl">Rain</span><span class="ir-val" id="iv-rain">—</span></div>
+  <div class="ir"><span class="ir-lbl">Temperature</span><span class="ir-val" id="iv-temp">—</span></div>
+  <div class="ir"><span class="ir-lbl">RH 850 hPa</span><span class="ir-val" id="iv-humid">—</span></div>
+  <div class="ir"><span class="ir-lbl">Cloud cover</span><span class="ir-val" id="iv-cloud">—</span></div>
+  <div class="ir"><span class="ir-lbl">Wind 10 m</span><span class="ir-val" id="iv-wind">—</span></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const API    = '';
+const BD     = { latMin: 20.0, latMax: 27.0, lonMin: 87.5, lonMax: 93.2 };
+const CENTER = [23.7, 90.35];
+const BASE_PLAY_MS = 750;   // interval at 1× playback speed
+
+// ─── State ────────────────────────────────────────────────────────────────────
+// activeLayer is one of: 'windspeed' | 'rain' | 'temp' | 'humidity' | 'cloud' | null
+// When 'windspeed', we also render the white streamline particles on top.
+const state = { run: null, step: 0, playing: false, activeLayer: null, speed: 1 };
+window.state = state;   // exposed for the smoke driver
+
+// ─── Legends ─────────────────────────────────────────────────────────────────
+// Gradient stops are positioned at the same `t` values as process_ecmwf.py
+// control points so the bar visually matches what's drawn on the map.
+// Gradient stops mirror the process_ecmwf.py control-point t values exactly.
+const LEGENDS = {
+  windspeed: {
+    title: 'Wind Speed', unit: 'm/s',
+    // yr.no wind: mint → green → teal → blue → purple
+    grad: 'linear-gradient(to right,#AFE4C8 0%,#64D296 16%,#0FA28E 34%,#0076B2 46%,#0044C6 58%,#0A12B9 70%,#3700A2 83%,#5F0082 100%)',
+    ticks: [{p:0,l:'0'},{p:23,l:'5.5'},{p:46,l:'11'},{p:70,l:'17'},{p:100,l:'24+'}],
+  },
+  rain: {
+    title: 'Precipitation', unit: 'mm / interval',
+    // yr.no radar blue: light → deep navy
+    grad: 'linear-gradient(to right,#96CDFF 0%,#69AFF8 7%,#3C87EB 14%,#0F5AD7 26%,#0032BE 42%,#0012A0 62%,#00057D 80%,#000050 100%)',
+    ticks: [{p:0,l:'0'},{p:12.5,l:'5'},{p:25,l:'10'},{p:50,l:'20'},{p:75,l:'30'},{p:100,l:'40+'}],
+  },
+  temp: {
+    title: 'Temperature', unit: '°C',
+    // yr.no full spectral: blue (cool) → cyan → green → yellow → orange → red
+    grad: 'linear-gradient(to right,#1478DC 0%,#00C8C8 17%,#14BE3C 33%,#A0D700 46%,#F5CD00 58%,#FF7800 72%,#DC1400 86%,#820000 100%)',
+    ticks: [{p:0,l:'18°'},{p:25,l:'24°'},{p:50,l:'30°'},{p:75,l:'36°'},{p:100,l:'42°'}],
+  },
+  humidity: {
+    title: 'Rel. Humidity 850 hPa', unit: '%',
+    grad: 'linear-gradient(to right,#B48C3C 0%,#64B450 29%,#14B482 57%,#006EC8 86%,#00336A 100%)',
+    ticks: [{p:0,l:'30%'},{p:28.6,l:'50%'},{p:57.1,l:'70%'},{p:85.7,l:'90%'},{p:100,l:'100%'}],
+  },
+  cloud: {
+    title: 'Cloud Cover', unit: '%',
+    grad: 'linear-gradient(to right,rgba(120,158,192,0) 0%,rgba(155,178,205,0.45) 15%,rgba(120,138,165,0.60) 40%,rgba(95,115,145,0.75) 70%,rgba(85,105,140,0.85) 100%)',
+    ticks: [{p:0,l:'0%'},{p:25,l:'25%'},{p:50,l:'50%'},{p:75,l:'75%'},{p:100,l:'100%'}],
+  },
+};
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+// zoomSnap 0.1 lets fitBounds settle on a fractional zoom (~7.5) for a tight fit;
+// without it Leaflet floors to zoom 7 and the view barely changes.
+const map = L.map('map', { center: CENTER, zoom: 7, zoomControl: false, zoomSnap: 0.1 });
+
+// Fit tightly to Bangladesh's extent so the country fills the viewport — a clean
+// presentation view that adapts to any screen size. Light padding keeps the edges
+// off the floating UI cards (layer rail on the right, timeline at the bottom).
+const BD_EXTENT = L.latLngBounds([20.5, 88.0], [26.7, 92.7]);
+function fitBangladesh() {
+  map.fitBounds(BD_EXTENT, { paddingTopLeft: [8, 28], paddingBottomRight: [64, 52] });
+}
+fitBangladesh();
+map.on('resize', fitBangladesh);
+
+// Esri Light Gray Canvas — clean, free, no API key required.
+// Base (land/water, no labels) goes in the tile pane, below the data.
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri', maxZoom: 16,
+}).addTo(map);
+
+// Dedicated pane for the animated wind streamlines: above the colour field
+// (overlayPane z=400) so they show on EVERY layer, below the labels.
+map.createPane('wind');
+map.getPane('wind').style.zIndex = 500;
+map.getPane('wind').style.pointerEvents = 'none';
+
+// Reference labels (place names, roads) in a dedicated pane ABOVE the data,
+// so city names stay readable even over the coloured overlays — yr.no style.
+map.createPane('labels');
+map.getPane('labels').style.zIndex = 650;
+map.getPane('labels').style.pointerEvents = 'none';
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+  pane: 'labels', maxZoom: 16,
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// ─── Bangladesh clip mask — data layers only render over the country ───────────
+// The data overlays cover a FIXED geographic bbox (BD.*) and the browser scales
+// them, so a clip-path in normalised (0–1) object-bounding-box units clips
+// correctly at every zoom without recomputation.
+//
+// Y must be normalised in WEB MERCATOR, not linear latitude: Leaflet stretches
+// the image linearly across the Mercator-projected bbox rectangle and draws the
+// border in Mercator too. A linear-latitude clip would sit ~7 km off near the
+// northern edge and let data bleed past the boundary. Longitude is already
+// linear in Mercator, so X stays a simple ratio.
+const _LON0 = BD.lonMin, _LONSPAN = BD.lonMax - BD.lonMin;
+const _mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+const _MY1 = _mercY(BD.latMax);
+const _MYSPAN = _mercY(BD.latMax) - _mercY(BD.latMin);
+let clipReady = false;
+
+function _ringPath(ring) {
+  let d = '';
+  for (let i = 0; i < ring.length; i++) {
+    const x = (ring[i][0] - _LON0) / _LONSPAN;
+    const y = (_MY1 - _mercY(ring[i][1])) / _MYSPAN;   // Mercator, top = latMax
+    d += (i ? 'L' : 'M') + x.toFixed(5) + ',' + y.toFixed(5);
+  }
+  return d + 'Z';
+}
+
+function applyClipAll() {
+  if (!clipReady) return;
+  document.querySelectorAll('.bd-clip-target').forEach(el => {
+    el.style.clipPath = 'url(#bd-clip)';
+    el.style.webkitClipPath = 'url(#bd-clip)';
+  });
+}
+
+function buildClip(geo) {
+  const g = geo.geometry;
+  const polys = g.type === 'MultiPolygon' ? g.coordinates : [g.coordinates];
+  let d = '';
+  for (const poly of polys) for (const ring of poly) d += _ringPath(ring);
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+  svg.style.cssText = 'position:absolute;width:0;height:0';
+  const cp = document.createElementNS(NS, 'clipPath');
+  cp.setAttribute('id', 'bd-clip');
+  cp.setAttribute('clipPathUnits', 'objectBoundingBox');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  cp.appendChild(path); svg.appendChild(cp); document.body.appendChild(svg);
+
+  clipReady = true;
+  applyClipAll();
+}
+
+fetch(`${API}/outline`).then(r => r.json()).then(buildClip).catch(() => {});
+
+// District boundary — thin lines drawn on top for geographic reference
+fetch(`${API}/boundary`).then(r => r.json()).then(g => {
+  L.geoJSON(g, { style: { color: 'rgba(40,80,160,0.30)', weight: 0.6, fillOpacity: 0 } }).addTo(map);
+}).catch(() => {});
+
+// ─── Image preloading ─────────────────────────────────────────────────────────
+const _preloaded = new Set();
+function _url(v, step) {
+  const { run_date, run_hour } = state.run;
+  return `${API}/layer/${v}/${run_date}/${run_hour}/${String(step).padStart(3,'0')}`;
+}
+function _preloadUrl(u) { if (_preloaded.has(u)) return; _preloaded.add(u); new Image().src = u; }
+function preloadAll(v)   { if (!state.run) return; for (let i=0; i<state.run.n_steps; i++) _preloadUrl(_url(v,i)); }
+function preloadAhead(v, from, n=10) {
+  if (!state.run || !v) return;
+  for (let i=1; i<=n; i++) _preloadUrl(_url(v, (from+i) % state.run.n_steps));
+}
+
+// ─── Wind JSON cache ──────────────────────────────────────────────────────────
+const windCache = new Map();
+async function _fetchWind(step) {
+  if (windCache.has(step)) return windCache.get(step);
+  const { run_date, run_hour } = state.run;
+  const res = await fetch(`${API}/wind/${run_date}/${run_hour}/${String(step).padStart(3,'0')}`);
+  if (!res.ok) return null;
+  const d = await res.json(); windCache.set(step, d); return d;
+}
+async function loadWind(step) {
+  if (!state.run) return;   // streamlines animate over EVERY layer, always on
+  try { const d = await _fetchWind(step); if (d && state.step===step) windLayer.setData(d); } catch(_) {}
+}
+function preloadWindAhead(from, n=8) {
+  if (!state.run) return;
+  for (let i=1; i<=n; i++) _fetchWind((from+i) % state.run.n_steps).catch(()=>{});
+}
+
+// ─── Scalar overlay — clipped to Bangladesh, double-buffered crossfade ─────────
+const BB = [[BD.latMin, BD.lonMin], [BD.latMax, BD.lonMax]];
+let scalarBufs = null, activeBuf = 0, _curVar = null;
+
+function _ensureBufs() {
+  if (scalarBufs) return;
+  scalarBufs = [0, 1].map(() => L.imageOverlay('', BB, {
+    opacity: 0, interactive: false, className: 'scalar-overlay bd-clip-target',
+  }).addTo(map));
+  applyClipAll();   // clip the fresh <img> elements if the mask is ready
+}
+
+// Crossfade to a new frame: load into the back buffer, then fade it in.
+function setScalarFrame(url) {
+  _ensureBufs();
+  const cur = scalarBufs[activeBuf];
+  const nxt = scalarBufs[activeBuf ^ 1];
+  nxt.once('load', () => { nxt.setOpacity(1); cur.setOpacity(0); activeBuf ^= 1; });
+  nxt.setUrl(url);
+}
+
+function showScalar(v, step) {
+  if (!v || !state.run) {
+    if (scalarBufs) scalarBufs.forEach(o => o.setOpacity(0));
+    document.getElementById('legend').style.display = 'none';
+    _curVar = null; return;
+  }
+  setScalarFrame(_url(v, step));
+  if (v !== _curVar) {
+    _curVar = v;
+    const lg = LEGENDS[v];
+    document.getElementById('legend-title').textContent = lg.title;
+    document.getElementById('legend-unit').textContent  = lg.unit;
+    document.getElementById('legend-bar').style.background = lg.grad;
+
+    // Render tick marks
+    const row = document.getElementById('legend-tick-row');
+    row.innerHTML = lg.ticks.map(({p, l}) =>
+      `<span class="lg-tick" style="left:${p}%">
+         <span class="lg-tick-line"></span>
+         <span class="lg-tick-val">${l}</span>
+       </span>`
+    ).join('');
+
+    document.getElementById('legend').style.display = 'block';
+    preloadAll(v);
+  } else { preloadAhead(v, step); }
+}
+
+// ─── Wind Canvas ──────────────────────────────────────────────────────────────
+class WindLayer {
+  constructor() { this._c=null; this._ctx=null; this._id=null; this._p=[]; this._w=null; this._W=0; this._H=0; this._on=false; }
+
+  add() {
+    if (this._c) return; this._on = true;
+    const c = document.createElement('canvas');
+    c.style.cssText = 'position:absolute;pointer-events:none;';
+    c.className = 'bd-clip-target';   // streamlines also clipped to Bangladesh
+    map.getPane('wind').appendChild(c);   // dedicated pane, above every colour layer
+    this._c = c; this._ctx = c.getContext('2d');
+    applyClipAll();
+    map.on('zoomend moveend resize', this._pos, this);
+    this._pos(); this._loop();
+  }
+
+  remove() {
+    this._on = false;
+    if (this._id) { cancelAnimationFrame(this._id); this._id = null; }
+    if (this._c)  { this._c.remove(); this._c = null; }
+    map.off('zoomend moveend resize', this._pos, this);
+  }
+
+  setData(d) {
+    // Swap the vector field in place — keep existing particles so they flow
+    // smoothly into the new field instead of all re-spawning (no visible pop).
+    this._w = { u: new Float32Array(d.u), v: new Float32Array(d.v), nLat: d.nLat, nLon: d.nLon };
+    if (!this._p.length) this._spawn();
+  }
+
+  _pos() {
+    if (!this._c) return;
+    const sw = map.latLngToLayerPoint([BD.latMin, BD.lonMin]);
+    const ne = map.latLngToLayerPoint([BD.latMax, BD.lonMax]);
+    L.DomUtil.setPosition(this._c, L.point(sw.x, ne.y));
+    this._c.width  = Math.max(1, Math.round(ne.x - sw.x));
+    this._c.height = Math.max(1, Math.round(sw.y - ne.y));
+    this._W = this._c.width; this._H = this._c.height;
+    this._spawn();
+  }
+
+  _spawn() {
+    this._p = Array.from({length:800}, () => ({
+      x: Math.random()*this._W, y: Math.random()*this._H,
+      age: Math.random()*60, px:null, py:null,
+    }));
+  }
+
+  _interp(px, py) {
+    if (!this._w) return {u:0,v:0};
+    const {u,v,nLat,nLon} = this._w;
+    let li=(py/this._H)*(nLat-1), lj=(px/this._W)*(nLon-1);
+    li=Math.max(0,Math.min(li,nLat-2)); lj=Math.max(0,Math.min(lj,nLon-2));
+    const i0=li|0, i1=i0+1, j0=lj|0, j1=j0+1, di=li-i0, dj=lj-j0;
+    const I=a=>a[i0*nLon+j0]*(1-di)*(1-dj)+a[i0*nLon+j1]*(1-di)*dj+a[i1*nLon+j0]*di*(1-dj)+a[i1*nLon+j1]*di*dj;
+    return {u:I(u),v:I(v)};
+  }
+
+  _loop() {
+    if (!this._on) return;
+    this._id = requestAnimationFrame(() => this._loop());
+    if (!this._w || this._W===0) return;
+    const ctx=this._ctx, MAX=60, SPD=0.25;
+
+    // Fade to transparent — keeps canvas clear so scalar overlays show through
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(0, 0, this._W, this._H);
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (const p of this._p) {
+      const {u,v} = this._interp(p.x, p.y);
+      const spd = Math.sqrt(u*u+v*v);
+      const nx = p.x+u*SPD, ny = p.y-v*SPD;
+
+      if (p.px!==null && spd>0.3 && nx>=0 && nx<=this._W && ny>=0 && ny<=this._H) {
+        // White streamlines — visible on both light basemap AND coloured overlays
+        const alpha = Math.sin(Math.PI * p.age/MAX) * Math.min(1, spd/6) * 0.82;
+        ctx.beginPath(); ctx.moveTo(p.px,p.py); ctx.lineTo(nx,ny);
+        ctx.lineWidth = Math.min(1.5, 0.5 + spd*0.06);
+        ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+        ctx.stroke();
+      }
+
+      p.age++;
+      if (p.age>MAX || nx<0 || nx>this._W || ny<0 || ny>this._H) {
+        p.x=Math.random()*this._W; p.y=Math.random()*this._H; p.age=0; p.px=null; p.py=null;
+      } else { p.px=p.x; p.py=p.y; p.x=nx; p.y=ny; }
+    }
+  }
+}
+
+const windLayer = new WindLayer();
+
+// ─── Tap-to-inspect ───────────────────────────────────────────────────────────
+let pinMarker = null;
+const pinIcon = L.divIcon({
+  className: '',
+  html: `<div style="position:relative;width:22px;height:22px;display:flex;align-items:center;justify-content:center">
+    <div style="position:absolute;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(0,114,198,0.55)"></div>
+    <div style="width:7px;height:7px;border-radius:50%;background:#0072C6"></div>
+  </div>`,
+  iconSize: [22,22], iconAnchor: [11,11],
+});
+
+map.on('click', async (e) => {
+  const {lat, lng:lon} = e.latlng;
+  if (lat<BD.latMin || lat>BD.latMax || lon<BD.lonMin || lon>BD.lonMax) return;
+
+  if (pinMarker) map.removeLayer(pinMarker);
+  pinMarker = L.marker([lat,lon], {icon:pinIcon}).addTo(map);
+
+  const card = document.getElementById('info-card');
+  card.classList.add('visible'); card.style.pointerEvents = 'all';
+  const pt = map.latLngToContainerPoint([lat,lon]);
+  card.style.left = Math.min(pt.x+18, window.innerWidth-225)+'px';
+  card.style.top  = Math.min(pt.y-16,  window.innerHeight-210)+'px';
+
+  ['rain','temp','humid','cloud','wind'].forEach(k => document.getElementById(`iv-${k}`).textContent = '…');
+  if (!state.run) return;
+  try {
+    const r = await fetch(`${API}/point/${state.run.run_date}/${state.run.run_hour}/${state.step}?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('iv-rain').textContent  = `${d.rain_mm} mm`;
+    document.getElementById('iv-temp').textContent  = `${d.temp_c} °C`;
+    document.getElementById('iv-humid').textContent = `${d.humidity_pct}%`;
+    document.getElementById('iv-cloud').textContent = `${d.cloud_pct}%`;
+    const dir8 = ['N','NE','E','SE','S','SW','W','NW'][Math.round(d.wind_dir_deg/45)%8];
+    document.getElementById('iv-wind').textContent  = `${d.wind_speed_ms.toFixed(1)} m/s ${dir8}`;
+  } catch(_) {}
+});
+
+document.getElementById('info-close').addEventListener('click', () => {
+  document.getElementById('info-card').classList.remove('visible');
+  if (pinMarker) { map.removeLayer(pinMarker); pinMarker=null; }
+});
+
+// ─── Layer toggles — one colour field at a time; wind streamlines always on top ─
+// The animated white streamlines render over EVERY layer (rain/temp/…) for the
+// catchy Ventusky look. The 'wind' button just picks the wind-SPEED colour field.
+function setActiveLayer(layer) {  // layer: PNG var name or null
+  document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+
+  // Toggle off if same layer clicked again (streamlines stay, over plain basemap)
+  if (state.activeLayer === layer) layer = null;
+  state.activeLayer = layer;
+
+  if (!layer) { showScalar(null, state.step); return; }
+
+  // Highlight the matching button (windspeed → btn-wind)
+  const btnId = layer === 'windspeed' ? 'btn-wind' : `btn-${layer}`;
+  document.getElementById(btnId).classList.add('active');
+
+  showScalar(layer, state.step);
+}
+
+document.querySelectorAll('.layer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const layer = btn.dataset.layer === 'wind' ? 'windspeed' : btn.dataset.layer;
+    setActiveLayer(layer);
+  });
+});
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+const slider  = document.getElementById('step-slider');
+const tlLabel = document.getElementById('tl-label');
+const playBtn = document.getElementById('play-btn');
+let playTimer = null;
+
+function fmtTime(idx) {
+  if (!state.run) return '';
+  const h   = state.run.step_hours[idx] || 0;
+  const ref = new Date(Date.UTC(
+    +state.run.run_date.slice(0,4), +state.run.run_date.slice(4,6)-1,
+    +state.run.run_date.slice(6,8), parseInt(state.run.run_hour)
+  ));
+  const dt = new Date(ref.getTime() + h*3600000);
+  const mm = String(dt.getUTCMonth()+1).padStart(2,'0');
+  const dd = String(dt.getUTCDate()).padStart(2,'0');
+  const hh = String(dt.getUTCHours()).padStart(2,'0');
+  return `${mm}-${dd} · ${hh}:00 UTC`;
+}
+
+function goToStep(step) {
+  state.step = step; slider.value = step;
+  const h = state.run?.step_hours?.[step] ?? 0;
+  document.getElementById('hdr-step').textContent = `T+${String(h).padStart(3,'0')}h`;
+  document.getElementById('hdr-time').textContent = fmtTime(step);
+  tlLabel.textContent = fmtTime(step);
+  showScalar(state.activeLayer, step);
+  loadWind(step);
+  preloadWindAhead(step);
+}
+
+slider.addEventListener('input', () => goToStep(parseInt(slider.value)));
+
+// Self-scheduling tick so speed changes take effect on the very next frame
+// without restarting a fixed-interval timer.
+function playTick() {
+  goToStep((state.step + 1) % state.run.n_steps);
+  playTimer = setTimeout(playTick, BASE_PLAY_MS / state.speed);
+}
+
+playBtn.addEventListener('click', () => {
+  state.playing = !state.playing;
+  playBtn.textContent = state.playing ? '⏸' : '▶';
+  playBtn.classList.toggle('playing', state.playing);
+  if (state.playing) playTimer = setTimeout(playTick, BASE_PLAY_MS / state.speed);
+  else clearTimeout(playTimer);
+});
+
+// Playback-speed slider (0.5×–4×)
+const speedSlider = document.getElementById('speed-slider');
+const speedLabel  = document.getElementById('speed-label');
+speedSlider.addEventListener('input', () => {
+  state.speed = parseFloat(speedSlider.value);
+  speedLabel.textContent = `${state.speed}×`;
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const res = await fetch(`${API}/runs/latest`);
+    if (!res.ok) throw new Error(res.status);
+    const run = await res.json();
+    state.run = run;
+    slider.max = run.n_steps - 1;
+    const rh = parseInt(run.run_hour);
+    document.getElementById('hdr-run').textContent =
+      `ECMWF IFS · ${run.run_date.slice(0,4)}-${run.run_date.slice(4,6)}-${run.run_date.slice(6,8)} · ${rh.toString().padStart(2,'0')}z UTC`;
+    document.getElementById('loading').style.display = 'none';
+
+    // Wind streamlines animate over every layer — start them once, always on.
+    windLayer.add();
+
+    // Default colour field: rain (blue) with the streamlines flowing on top.
+    setActiveLayer('rain');
+    goToStep(0);
+
+    // Warm all wind steps in background
+    (async () => {
+      for (let i=0; i<run.n_steps; i+=4)
+        await Promise.all(Array.from({length:Math.min(4,run.n_steps-i)},(_,j)=>_fetchWind(i+j).catch(()=>{})));
+    })();
+
+  } catch(err) {
+    document.getElementById('loading').innerHTML = `
+      <div style="text-align:center;padding:32px">
+        <div style="font-family:var(--mono);font-size:11px;color:#FF4455;letter-spacing:.1em;margin-bottom:10px">API OFFLINE</div>
+        <code style="font-family:var(--mono);font-size:10px;color:var(--muted)">bash start.sh</code>
+      </div>`;
+  }
+})();
+</script>
+</body>
+</html>
