@@ -60,11 +60,16 @@ def _get_dataset(nc_path: Path) -> xr.Dataset:
 
 
 def _find_nc(run_date: str, run_hour: str) -> Optional[Path]:
-    """Locate the source NetCDF for a given run."""
+    """Locate the source NetCDF for a given run. Checks the project root and the
+    ingest archive (where watch_ingest.py moves processed files)."""
     hour_int = run_hour.rstrip('z')
-    for candidate in ROOT.glob('*.nc'):
-        if run_date in candidate.name and f'_{hour_int}.' in candidate.name:
-            return candidate
+    search_dirs = [ROOT, ROOT / 'data' / 'incoming' / 'archive', ROOT / 'data' / 'incoming']
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for candidate in d.glob('*.nc'):
+            if run_date in candidate.name and f'_{hour_int}.' in candidate.name:
+                return candidate
     return None
 
 

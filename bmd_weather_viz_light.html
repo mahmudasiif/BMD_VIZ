@@ -231,6 +231,19 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
 @keyframes spin { to { transform: rotate(360deg); } }
 #load-txt { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
 
+/* ── Toast (new-data notification) ──────────────────── */
+#toast {
+  position: absolute; top: 58px; left: 50%; transform: translateX(-50%) translateY(-12px);
+  z-index: 1100; padding: 8px 16px;
+  background: var(--accent); color: #fff;
+  border-radius: 20px; font-size: 12px; font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  display: flex; align-items: center; gap: 7px;
+  opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast::before { content: '↻'; font-size: 14px; }
+
 /* ── Responsive ─────────────────────────────────────── */
 @media (max-width: 640px) {
   #layer-rail { top:auto; bottom:88px; right:50%; transform:translateX(50%); flex-direction:row; }
@@ -253,6 +266,8 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
   <div class="hdr-div"></div>
   <span id="hdr-time">—</span>
 </div>
+
+<div id="toast"></div>
 
 <!-- Layer Rail -->
 <div id="layer-rail" class="card">
@@ -761,31 +776,72 @@ speedSlider.addEventListener('input', () => {
   speedLabel.textContent = `${state.speed}×`;
 });
 
+// ─── Run loading + auto-refresh ────────────────────────────────────────────────
+const RUN_POLL_MS = 5 * 60 * 1000;   // check for a newer run every 5 min
+const runKey = r => r ? r.run_date + r.run_hour : '';
+let _toastTimer = null;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+function warmWindCache(run) {
+  (async () => {
+    for (let i = 0; i < run.n_steps; i += 4)
+      await Promise.all(Array.from({ length: Math.min(4, run.n_steps - i) },
+        (_, j) => _fetchWind(i + j).catch(() => {})));
+  })();
+}
+
+// Apply a run to the UI. `initial` = first load; otherwise it's a live refresh
+// triggered by the poller when a newer forecast run has been processed.
+function applyRun(run, initial) {
+  const changed = runKey(run) !== runKey(state.run);
+  state.run = run;
+  slider.max = run.n_steps - 1;
+  const rh = parseInt(run.run_hour);
+  document.getElementById('hdr-run').textContent =
+    `ECMWF IFS · ${run.run_date.slice(0,4)}-${run.run_date.slice(4,6)}-${run.run_date.slice(6,8)} · ${rh.toString().padStart(2,'0')}z UTC`;
+
+  if (!initial && changed) {
+    // A new run arrived while viewing — drop per-step caches (windCache is keyed
+    // by step, _preloaded by URL) and re-render at the same step index if valid.
+    windCache.clear();
+    _preloaded.clear();
+    _curVar = null;   // force legend + preload refresh for the new run
+    goToStep(Math.min(state.step, run.n_steps - 1));
+    showToast(`New run loaded · ${run.run_date.slice(4,6)}-${run.run_date.slice(6,8)} ${rh.toString().padStart(2,'0')}z`);
+  }
+  warmWindCache(run);
+}
+
+async function fetchLatestRun() {
+  const res = await fetch(`${API}/runs/latest`);
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   try {
-    const res = await fetch(`${API}/runs/latest`);
-    if (!res.ok) throw new Error(res.status);
-    const run = await res.json();
-    state.run = run;
-    slider.max = run.n_steps - 1;
-    const rh = parseInt(run.run_hour);
-    document.getElementById('hdr-run').textContent =
-      `ECMWF IFS · ${run.run_date.slice(0,4)}-${run.run_date.slice(4,6)}-${run.run_date.slice(6,8)} · ${rh.toString().padStart(2,'0')}z UTC`;
+    const run = await fetchLatestRun();
+    applyRun(run, true);
     document.getElementById('loading').style.display = 'none';
 
     // Wind streamlines animate over every layer — start them once, always on.
     windLayer.add();
-
     // Default colour field: rain (blue) with the streamlines flowing on top.
     setActiveLayer('rain');
     goToStep(0);
 
-    // Warm all wind steps in background
-    (async () => {
-      for (let i=0; i<run.n_steps; i+=4)
-        await Promise.all(Array.from({length:Math.min(4,run.n_steps-i)},(_,j)=>_fetchWind(i+j).catch(()=>{})));
-    })();
+    // Poll for newer runs and hot-swap the view when one appears.
+    setInterval(async () => {
+      try { applyRun(await fetchLatestRun(), false); } catch(_) {}
+    }, RUN_POLL_MS);
 
   } catch(err) {
     document.getElementById('loading').innerHTML = `

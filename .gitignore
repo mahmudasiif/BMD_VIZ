@@ -6,6 +6,13 @@
 data/viz/
 data/lightning/
 
+# ─── Ingest drop folder (raw .nc files land here; keep the dir, ignore data) ─
+data/incoming/*
+!data/incoming/.gitkeep
+
+# ─── Logs ───────────────────────────────────────────────────────────────────
+*.log
+
 # ─── Node / Playwright ──────────────────────────────────────────────────────
 node_modules/
 package-lock.json

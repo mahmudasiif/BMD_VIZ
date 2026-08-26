@@ -36,9 +36,27 @@ python3 scripts/process_ecmwf.py --input bangladesh_atmos_20260823_12.nc
 ```
 
 - Domain is **tight around Bangladesh**: lat 20–27°N, lon 87.5–93.2°E (data is clipped to the country anyway; a small lat span keeps Mercator distortion negligible)
-- Outputs 880×660 RGBA PNGs + wind JSON for all 54 time steps
+- Outputs 720×900 RGBA PNGs (rain/temp/humidity/cloud/**windspeed**) + wind JSON for all 54 time steps
 - Runtime: ~60 s
 - Skip if `data/viz/*/manifest.json` already exists
+
+### Regular data — automatic ingest (cron)
+
+ECMWF runs 2×/day (00z/12z). Drop-folder based, scheduled by **cron**:
+
+```bash
+# Your fimex/OPeNDAP pipeline drops new runs here:
+cp bangladesh_atmos_YYYYMMDD_HH.nc data/incoming/
+
+# cron processes pending files + prunes old runs (every 15 min):
+*/15 * * * * cd /home/mics02/bmd_viz && python3 scripts/watch_ingest.py --keep 6 >> data/ingest.log 2>&1
+```
+
+- **No archiving** — raw `.nc` files stay in `data/incoming/`; the `/point` endpoint reads them for exact values. A file is skipped once `data/viz/{date}/{hour}z/manifest.json` exists (derived from the `YYYYMMDD_HH` filename), so re-running is idempotent ("nothing new").
+- Waits for a file to stop growing before processing (avoids half-copied uploads).
+- `--keep N` prunes `data/viz/` to the N newest runs **and deletes their raw `.nc`** from `data/incoming/`, so the folder never holds more than N files.
+- The frontend **auto-refreshes**: polls `/runs/latest` every 5 min and hot-swaps to a newer run (clears the per-step wind cache, re-renders at the same step, shows a "↻ New run loaded" toast) — no page reload.
+- `scripts/watch_ingest.py --watch` exists for a standalone daemon, but with cron set you don't need it. `start.sh` runs one ingest pass then starts the server (cron keeps it fresh after).
 
 Also exports the district GeoJSON + dissolved country outline once (already done):
 ```bash
