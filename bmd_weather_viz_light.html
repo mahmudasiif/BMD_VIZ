@@ -231,6 +231,74 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
 @keyframes spin { to { transform: rotate(360deg); } }
 #load-txt { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
 
+/* ── 5-Day Outlook button + modal ───────────────────── */
+#outlook-btn {
+  position: absolute; top: 14px; left: 16px; z-index: 900;
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); box-shadow: var(--shadow);
+  transition: background .12s;
+}
+#outlook-btn:hover { background: #F0F5FB; }
+#outlook-btn svg { width: 15px; height: 15px; stroke: var(--accent); fill: none; stroke-width: 1.8; }
+
+/* Right-docked panel — leaves the map visible so hovering a division shows
+   the highlight live (the presenter points at it on the map). */
+#outlook-modal {
+  position: absolute; inset: 0; z-index: 1500;
+  display: none; pointer-events: none;   /* map stays interactive behind */
+}
+#outlook-modal.show { display: block; }
+#outlook-panel {
+  position: absolute; top: 12px; right: 12px; bottom: 12px;
+  width: min(520px, 94vw);
+  background: #fff; border-radius: 14px; box-shadow: 0 12px 48px rgba(0,0,0,.28);
+  overflow: auto; padding: 20px 22px 22px;
+  pointer-events: auto;
+  transform: translateX(calc(100% + 20px)); transition: transform .3s ease;
+}
+#outlook-modal.show #outlook-panel { transform: translateX(0); }
+#outlook-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+#outlook-head h2 { font-size: 17px; font-weight: 600; color: var(--txt); }
+#outlook-run { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+#outlook-close {
+  margin-left: auto; font-size: 20px; color: var(--muted); cursor: pointer;
+  line-height: 1; padding: 0 4px;
+}
+#outlook-close:hover { color: var(--txt); }
+#outlook-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+table.outlook-grid { border-collapse: separate; border-spacing: 6px; width: 100%; }
+table.outlook-grid th {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; text-align: center;
+}
+table.outlook-grid th.div-col { text-align: left; min-width: 96px; }
+table.outlook-grid td.div-name {
+  font-size: 13px; font-weight: 600; color: var(--txt); white-space: nowrap;
+  padding-right: 8px; cursor: pointer; border-radius: 6px;
+}
+table.outlook-grid tr:hover td.div-name { color: var(--accent); }
+.ocell {
+  border-radius: 8px; padding: 8px 5px 7px; text-align: center;
+  background: #F5F8FB; border: 1px solid #EAF0F6; min-width: 62px;
+}
+.ocell .oicon { font-size: 20px; line-height: 1; }
+.ocell .orain { font-family: var(--mono); font-size: 11px; color: var(--rain); margin-top: 3px; }
+.ocell .otemp { font-family: var(--mono); font-size: 11px; color: var(--txt); margin-top: 1px; }
+.ocell .otemp .tmin { color: var(--muted); }
+/* Condition tints */
+.ocell.c-rain, .ocell.c-rain-heavy { background: #EAF2FF; border-color: #D6E6FB; }
+.ocell.c-clear { background: #FFFBEC; border-color: #F6EFD0; }
+
+@media (max-width: 620px) {
+  #outlook-panel { padding: 16px; }
+  .ocell { min-width: 56px; padding: 6px 3px; }
+  .ocell .oicon { font-size: 16px; }
+}
+
 /* ── Toast (new-data notification) ──────────────────── */
 #toast {
   position: absolute; top: 58px; left: 50%; transform: translateX(-50%) translateY(-12px);
@@ -268,6 +336,23 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
 </div>
 
 <div id="toast"></div>
+
+<!-- 5-Day Divisional Outlook -->
+<div id="outlook-btn" title="5-day forecast by division">
+  <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+  5-Day Outlook
+</div>
+<div id="outlook-modal">
+  <div id="outlook-panel">
+    <div id="outlook-head">
+      <h2>5-Day Divisional Outlook</h2>
+      <span id="outlook-run"></span>
+      <span id="outlook-close">✕</span>
+    </div>
+    <div id="outlook-sub">Area-averaged forecast per division. Hover a division to highlight it on the map.</div>
+    <div id="outlook-body"></div>
+  </div>
+</div>
 
 <!-- Layer Rail -->
 <div id="layer-rail" class="card">
@@ -774,6 +859,102 @@ const speedLabel  = document.getElementById('speed-label');
 speedSlider.addEventListener('input', () => {
   state.speed = parseFloat(speedSlider.value);
   speedLabel.textContent = `${state.speed}×`;
+});
+
+// ─── 5-Day Divisional Outlook ──────────────────────────────────────────────────
+const COND_ICON = {
+  'clear': '☀️', 'partly': '🌤️', 'cloudy': '☁️',
+  'drizzle': '🌦️', 'rain': '🌧️', 'rain-heavy': '⛈️',
+};
+// Presentation order (north → south, then east)
+const DIVISION_ORDER = ['Rangpur','Rajshahi','Mymensingh','Dhaka','Khulna','Barisal','Chattogram','Sylhet'];
+let _divGeo = null;        // divisions geojson (loaded once)
+let _divHighlight = null;  // current highlight layer
+const _outlookCache = new Map();  // runKey -> outlook data
+
+async function _loadDivisions() {
+  if (_divGeo) return _divGeo;
+  try { _divGeo = await (await fetch(`${API}/divisions`)).json(); } catch(_) {}
+  return _divGeo;
+}
+
+function highlightDivision(name) {
+  if (!_divGeo) return;
+  clearHighlight();
+  const feat = _divGeo.features.find(f => f.properties.division === name);
+  if (!feat) return;
+  _divHighlight = L.geoJSON(feat, {
+    pane: 'labels',
+    style: { color: '#005B9A', weight: 2.5, fillColor: '#3DAAFF', fillOpacity: 0.18 },
+  }).addTo(map);
+}
+function clearHighlight() {
+  if (_divHighlight) { map.removeLayer(_divHighlight); _divHighlight = null; }
+}
+
+function renderOutlook(data) {
+  document.getElementById('outlook-run').textContent =
+    `ECMWF IFS · ${data.run_date.slice(0,4)}-${data.run_date.slice(4,6)}-${data.run_date.slice(6,8)} ${parseInt(data.run_hour)}z`;
+
+  let html = '<table class="outlook-grid"><thead><tr><th class="div-col">Division</th>';
+  for (const d of data.days) html += `<th>${d.dow}<br>${d.label}</th>`;
+  html += '</tr></thead><tbody>';
+  const ordered = [...data.divisions].sort((a, b) =>
+    DIVISION_ORDER.indexOf(a.division) - DIVISION_ORDER.indexOf(b.division));
+  for (const div of ordered) {
+    html += `<tr data-div="${div.division}"><td class="div-name">${div.division}</td>`;
+    for (const day of div.days) {
+      const icon = COND_ICON[day.condition] || '·';
+      html += `<td><div class="ocell c-${day.condition}">
+        <div class="oicon">${icon}</div>
+        <div class="orain">${day.rain_mm} mm</div>
+        <div class="otemp">${day.tmax}°<span class="tmin"> / ${day.tmin}°</span></div>
+      </div></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  const body = document.getElementById('outlook-body');
+  body.innerHTML = html;
+
+  // Hover a division row → highlight it on the map
+  body.querySelectorAll('tr[data-div]').forEach(tr => {
+    tr.addEventListener('mouseenter', () => highlightDivision(tr.dataset.div));
+    tr.addEventListener('mouseleave', clearHighlight);
+  });
+}
+
+let _outlookPan = 0;   // px the map was shifted to clear the panel
+async function openOutlook() {
+  const modal = document.getElementById('outlook-modal');
+  modal.classList.add('show');
+  // Shift Bangladesh left so it clears the right-docked panel (wide screens)
+  _outlookPan = window.innerWidth > 900 ? 240 : 0;
+  if (_outlookPan) map.panBy([_outlookPan, 0], { animate: true });
+  document.getElementById('outlook-body').innerHTML =
+    '<div style="padding:40px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">Computing outlook…</div>';
+  await _loadDivisions();
+  const key = runKey(state.run);
+  if (_outlookCache.has(key)) { renderOutlook(_outlookCache.get(key)); return; }
+  try {
+    const data = await (await fetch(`${API}/outlook/${state.run.run_date}/${state.run.run_hour}`, { cache: 'no-store' })).json();
+    _outlookCache.set(key, data);
+    renderOutlook(data);
+  } catch(_) {
+    document.getElementById('outlook-body').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#C62828">Could not load outlook.</div>';
+  }
+}
+function closeOutlook() {
+  document.getElementById('outlook-modal').classList.remove('show');
+  clearHighlight();
+  if (_outlookPan) { map.panBy([-_outlookPan, 0], { animate: true }); _outlookPan = 0; }
+}
+
+document.getElementById('outlook-btn').addEventListener('click', openOutlook);
+document.getElementById('outlook-close').addEventListener('click', closeOutlook);
+document.getElementById('outlook-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'outlook-modal') closeOutlook();   // click backdrop to close
 });
 
 // ─── Run loading + auto-refresh ────────────────────────────────────────────────

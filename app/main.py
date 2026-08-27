@@ -31,6 +31,7 @@ LIGHTNING_DB = ROOT / 'data' / 'lightning' / 'strikes.db'
 FRONTEND_HTML = ROOT / 'bmd_weather_viz_light.html'
 BOUNDARY_GEOJSON = ROOT / 'data' / 'bd_boundary.geojson'
 OUTLINE_GEOJSON = ROOT / 'data' / 'bd_outline.geojson'
+DIVISIONS_GEOJSON = ROOT / 'data' / 'bd_divisions.geojson'
 
 BD_LAT_MAX = 27.0
 BD_LAT_MIN = 20.0
@@ -124,6 +125,36 @@ def outline():
         content=json.loads(OUTLINE_GEOJSON.read_text()),
         headers={'Cache-Control': 'public, max-age=86400'},
     )
+
+
+@app.get('/divisions')
+def divisions():
+    if not DIVISIONS_GEOJSON.exists():
+        raise HTTPException(404, 'Divisions GeoJSON not found.')
+    return JSONResponse(content=json.loads(DIVISIONS_GEOJSON.read_text()),
+                        headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.get('/outlook/{run_date}/{run_hour}')
+def outlook(run_date: str, run_hour: str):
+    """5-day, per-division forecast summary. Computed on first request from the
+    source NetCDF, then cached to data/viz/{date}/{hour}z/outlook.json."""
+    _manifest(run_date, run_hour)  # 404 if run not processed
+    cache = DATA_DIR / run_date / run_hour / 'outlook.json'
+    if cache.exists():
+        return JSONResponse(content=json.loads(cache.read_text()),
+                            headers={'Cache-Control': 'no-store'})
+
+    nc_path = _find_nc(run_date, run_hour)
+    if nc_path is None:
+        raise HTTPException(404, 'Source NetCDF not found for this run.')
+
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / 'scripts'))
+    from compute_outlook import compute_outlook  # lazy: avoids slow startup import
+    data = compute_outlook(nc_path)
+    cache.write_text(json.dumps(data))
+    return JSONResponse(content=data, headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/health')

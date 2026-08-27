@@ -69,6 +69,15 @@ diss = gdf.dissolve().geometry.iloc[0].simplify(0.0005, preserve_topology=True)
 feat = {'type':'Feature','properties':{},
         'geometry': json.loads(gpd.GeoSeries([diss]).to_json())['features'][0]['geometry']}
 json.dump(feat, open('data/bd_outline.geojson','w'))
+# Division polygons for the 5-day outlook. The shapefile predates the 2015
+# reorg, so split Mymensingh out of Dhaka and modernise Chittagong's spelling.
+gdf.loc[gdf['FIRST_DIST'].isin(['MYMENSINGH','JAMALPUR','NETRAKONA','SHERPUR']), 'Division'] = 'Mymensingh'
+gdf.loc[gdf['Division']=='Chittagong', 'Division'] = 'Chattogram'
+dv = gdf.dissolve(by='Division').reset_index()[['Division','geometry']]
+dv['geometry'] = dv['geometry'].simplify(0.005, preserve_topology=True)
+o = json.loads(dv.to_json())
+for f in o['features']: f['properties'] = {'division': f['properties']['Division']}
+json.dump(o, open('data/bd_divisions.geojson','w'))   # 8 divisions
 "
 ```
 
@@ -171,6 +180,12 @@ re-fitting on window resize.
 
 Click anywhere on the map → white point-forecast card.
 
+**5-Day Outlook** button (top-left) opens a right-docked panel with a 8-division ×
+5-day grid (condition icon, rain mm, temp max/min) for presentations. The map pans
+left to clear the panel; hovering a division row highlights that division polygon on
+the map. Computed by `scripts/compute_outlook.py` (area-averages the forecast over
+the grid cells inside each division polygon), served/cached via `/outlook`.
+
 The timeline has a **playback-speed slider** (0.5×–4×, `#speed-slider`) next to the
 step scrubber. Playback uses a self-scheduling `setTimeout` reading
 `BASE_PLAY_MS / state.speed` each tick, so speed changes apply on the next frame
@@ -188,6 +203,8 @@ without restarting the timer.
 | `GET /runs` | All available runs |
 | `GET /boundary` | Bangladesh district GeoJSON (64 features) |
 | `GET /outline` | Dissolved country outline (1 MultiPolygon) — used to clip layers |
+| `GET /divisions` | 8 division polygons (for the outlook highlight) |
+| `GET /outlook/{date}/{hour}` | 5-day per-division forecast summary (computed once, cached to `outlook.json`) |
 | `GET /layer/{var}/{date}/{hour}/{step}` | 880×660 RGBA PNG overlay |
 | `GET /wind/{date}/{hour}/{step}` | u/v wind grid JSON (for streamline particles) |
 | `GET /lightning/recent?hours=N` | Lightning strikes (empty — feed not yet wired) |
