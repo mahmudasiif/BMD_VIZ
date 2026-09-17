@@ -86,13 +86,13 @@ json.dump(o, open('data/bd_divisions.geojson','w'))   # 8 divisions
 ## Start the server
 
 ```bash
-~/.local/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level warning &
-until curl -sf http://localhost:8000/health >/dev/null; do sleep 1; done
+~/.local/bin/uvicorn app.main:app --host 0.0.0.0 --port 9090 --log-level warning &
+until curl -sf http://localhost:9090/health >/dev/null; do sleep 1; done
 ```
 
 Stop:
 ```bash
-fuser -k 8000/tcp
+fuser -k 9090/tcp
 ```
 
 Or use the all-in-one startup script:
@@ -146,12 +146,12 @@ node .claude/skills/run-bmd-viz/driver.mjs point 23.72 90.41
 ### Direct API smoke (no browser)
 
 ```bash
-curl -s http://localhost:8000/health
-curl -s http://localhost:8000/runs/latest | python3 -m json.tool | head -10
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/layer/rain/20260823/12z/004
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/wind/20260823/12z/004
-curl -s "http://localhost:8000/point/20260823/12z/5?lat=23.72&lon=90.41"
-curl -s http://localhost:8000/boundary | python3 -m json.tool | head -5
+curl -s http://localhost:9090/health
+curl -s http://localhost:9090/runs/latest | python3 -m json.tool | head -10
+curl -s -o /dev/null -w "%{http_code}" http://localhost:9090/layer/rain/20260823/12z/004
+curl -s -o /dev/null -w "%{http_code}" http://localhost:9090/wind/20260823/12z/004
+curl -s "http://localhost:9090/point/20260823/12z/5?lat=23.72&lon=90.41"
+curl -s http://localhost:9090/boundary | python3 -m json.tool | head -5
 ```
 
 ---
@@ -180,11 +180,20 @@ re-fitting on window resize.
 
 Click anywhere on the map → white point-forecast card.
 
-**5-Day Outlook** button (top-left) opens a right-docked panel with a 8-division ×
+**5-Day Outlook** button (top-left) opens a left-docked panel with an 8-division ×
 5-day grid (condition icon, rain mm, temp max/min) for presentations. The map pans
-left to clear the panel; hovering a division row highlights that division polygon on
-the map. Computed by `scripts/compute_outlook.py` (area-averages the forecast over
-the grid cells inside each division polygon), served/cached via `/outlook`.
+right to clear the panel; hovering a division row **spotlights** it — a white fade
+mask dims the rest of Bangladesh (division punched out via `fillRule: evenodd`), a
+crisp outline + a mini 5-day forecast popup appear over it. Computed by
+`scripts/compute_outlook.py` (area-averages the forecast over the grid cells inside
+each division polygon), served/cached via `/outlook`.
+
+**Division** button (bottom of the layer rail, independent toggle) enables map
+interaction: tap/click any division **on the map** to spotlight it with the popup —
+the same effect, triggered by touching the map instead of the panel. Tapping an
+empty area clears it. Works over whatever colour field is active (it doesn't
+replace it). Panes: `divinteract` (z 540, clickable) → `fade` (660) → `divline`
+(670); popup in Leaflet's popup pane on top.
 
 The timeline has a **playback-speed slider** (0.5×–4×, `#speed-slider`) next to the
 step scrubber. Playback uses a self-scheduling `setTimeout` reading
@@ -252,7 +261,7 @@ regions show the plain basemap (focus-country effect). **Frames crossfade smooth
 - **Clip outline must be dissolved AND high-res** — `/boundary` has 64 separate district polygons; clipping needs the single-country union (`geopandas .dissolve()` → `data/bd_outline.geojson`). Simplify only lightly (**0.0005°**, ~15k pts): coarser tolerances (e.g. 0.01°) straighten the border's concave notches (Tripura) and the data bleeds into India. The delta yields ~133 MultiPolygon parts (islands) — fine as one SVG path.
 - **Smooth frame transitions need double-buffering** — a single `imageOverlay.setUrl()` hard-cuts. Two overlays (`scalarBufs[0..1]`) crossfade: load the back buffer, then on its `load` event fade it in and the front out. CSS `.scalar-overlay { transition: opacity .4s }`.
 - **Don't re-spawn wind particles on step change** — `setData()` swaps the vector field in place and keeps particles so they flow into the new field (no visible pop). Only spawn when the particle array is empty (first load / after resize).
-- **`pkill -f uvicorn` exits 144** — use `fuser -k 8000/tcp` instead.
+- **`pkill -f uvicorn` exits 144** — use `fuser -k 9090/tcp` instead.
 - **Canvas white box** — `fillStyle rgba(255,255,255,…)` fades trails to white and blocks scalar overlays. Fixed: `globalCompositeOperation = 'destination-out'` fades to transparent.
 - **Wind canvas invisible** — positioned at NE corner with negative width. Fixed: position at NW corner `L.point(sw.x, ne.y)`, `width = ne.x − sw.x`.
 - **Data misaligned with boundary (spills north)** — `L.imageOverlay` stretches the PNG *linearly* across its geographic bbox, but Leaflet draws vector boundaries in *Web Mercator*. Over a wide latitude span (the old 13–35°N domain) this mismatch reached ~80 km, so the data spilled past the country outline. Fixed by shrinking the domain to a tight 20–27°N band — Mercator distortion over 7° is only a few km. (A fully correct fix would Mercator-warp the PNG rows, but the tight domain makes it unnecessary.)
@@ -268,7 +277,7 @@ regions show the plain basemap (focus-country effect). **Frames crossfade smooth
 | Symptom | Fix |
 |---|---|
 | Loading spinner stays / "API OFFLINE" | Check `run_hour` date math — must use `parseInt`, not `+` |
-| Address already in use | `fuser -k 8000/tcp` |
+| Address already in use | `fuser -k 9090/tcp` |
 | 404 on `/layer/…` | Run `process_ecmwf.py --input <nc_file>` first |
 | Blank rain at T+0 | Expected — interval precipitation at step 0 is 0 mm |
 | Point query 404 | Ensure `bangladesh_atmos_*.nc` is in project root |

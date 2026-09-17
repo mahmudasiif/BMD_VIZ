@@ -102,21 +102,18 @@ def wind_speed_rgba(u: np.ndarray, v: np.ndarray) -> np.ndarray:
     return _interp_rgba(t, ctrl)
 
 
-def temp_rgba(data: np.ndarray, vmin: float = 18.0, vmax: float = 42.0) -> np.ndarray:
+def temp_rgba(data: np.ndarray, vmin: float = 0.0, vmax: float = 50.0) -> np.ndarray:
+    # Ventusky warm scale over 0..50 °C (the cold-blue half is dropped — never
+    # applies to Bangladesh). 0 °C = white → yellow → orange → red → dark red.
     t = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
     ctrl = np.array([
-        # t     R    G    B    A   ← yr.no full spectral scale mapped to Bangladesh
-        # yr.no's global rainbow: blue (cold) → cyan → green → yellow → orange → red
-        # For 18-42°C Bangladesh range, start at cyan-blue (coolest, e.g. mountains)
-        # through green → yellow → orange → red (hottest plains in summer).
-        [0.000,  20, 120, 220, 185],   # 18°C  steel blue (cool uplands)
-        [0.165,   0, 200, 200, 195],   # 22°C  cyan-teal
-        [0.330,  20, 190,  60, 202],   # 26°C  green
-        [0.460, 160, 215,   0, 208],   # 29°C  yellow-green
-        [0.580, 245, 205,   0, 213],   # 32°C  vivid yellow
-        [0.720, 255, 120,   0, 218],   # 35°C  orange
-        [0.860, 220,  20,   0, 222],   # 38°C  red-orange
-        [1.000, 130,   0,   0, 228],   # 42°C  dark red
+        # t     R    G    B    A       °C
+        [0.00, 250, 250, 250, 190],   #   0  white
+        [0.20, 250, 245, 170, 205],   #  10  pale yellow
+        [0.40, 255, 220,   0, 215],   #  20  yellow
+        [0.60, 255, 140,   0, 220],   #  30  orange
+        [0.80, 230,  20,   0, 225],   #  40  red
+        [1.00, 120,   0,   0, 230],   #  50  dark red
     ])
     return _interp_rgba(t, ctrl)
 

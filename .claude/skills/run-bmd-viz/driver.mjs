@@ -17,7 +17,7 @@ import { mkdir } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const BASE    = process.env.BMD_BASE ?? 'http://localhost:8000';
+const BASE    = process.env.BMD_BASE ?? 'http://localhost:9090';
 const DIR     = dirname(fileURLToPath(import.meta.url));
 const SS_DIR  = resolve(DIR, 'screenshots');
 

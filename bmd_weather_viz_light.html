@@ -94,6 +94,7 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
   letter-spacing: .06em; text-transform: uppercase; transition: color .12s;
 }
 .layer-btn.active span { color: var(--accent); }
+.layer-rail-sep { height: 1px; background: var(--border); margin: 3px 6px; }
 
 /* ── Timeline — yr.no style ─────────────────────────── */
 #timeline {
@@ -252,12 +253,12 @@ html, body { height: 100%; font-family: 'Inter', sans-serif; color: var(--txt); 
 }
 #outlook-modal.show { display: block; }
 #outlook-panel {
-  position: absolute; top: 12px; right: 12px; bottom: 12px;
+  position: absolute; top: 12px; left: 12px; bottom: 12px;
   width: min(520px, 94vw);
   background: #fff; border-radius: 14px; box-shadow: 0 12px 48px rgba(0,0,0,.28);
   overflow: auto; padding: 20px 22px 22px;
   pointer-events: auto;
-  transform: translateX(calc(100% + 20px)); transition: transform .3s ease;
+  transform: translateX(calc(-100% - 20px)); transition: transform .3s ease;
 }
 #outlook-modal.show #outlook-panel { transform: translateX(0); }
 #outlook-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
@@ -297,6 +298,39 @@ table.outlook-grid tr:hover td.div-name { color: var(--accent); }
   #outlook-panel { padding: 16px; }
   .ocell { min-width: 56px; padding: 6px 3px; }
   .ocell .oicon { font-size: 16px; }
+}
+
+/* ── Division popup — futuristic glass label with animated glow ─────────── */
+.div-popup .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(232,244,255,0.94));
+  backdrop-filter: blur(6px);
+  border-radius: 13px;
+  border: 1.5px solid rgba(0,150,220,0.55);
+  box-shadow: 0 0 0 4px rgba(0,150,220,0.12),
+              0 0 22px rgba(0,150,220,0.35),
+              0 10px 34px rgba(0,50,110,0.28);
+  padding: 2px 4px;
+  animation: dpPop .42s cubic-bezier(.34,1.56,.64,1), dpGlow 2.4s ease-in-out .42s infinite;
+}
+.div-popup .leaflet-popup-content { margin: 9px 16px; }
+.div-popup .leaflet-popup-tip {
+  background: rgba(240,248,255,0.95);
+  border: 1.5px solid rgba(0,150,220,0.4); border-top: none; border-left: none;
+}
+.dp-name {
+  font-size: 15px; font-weight: 700; color: var(--accent);
+  text-align: center; letter-spacing: .08em; text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Pop-in with a slight overshoot, rising into place */
+@keyframes dpPop {
+  0%   { opacity: 0; transform: scale(.5) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+/* Gentle pulsing glow so it reads as "live/active" */
+@keyframes dpGlow {
+  0%,100% { box-shadow: 0 0 0 4px rgba(0,150,220,0.10), 0 0 18px rgba(0,150,220,0.28), 0 10px 34px rgba(0,50,110,0.26); }
+  50%     { box-shadow: 0 0 0 5px rgba(0,150,220,0.18), 0 0 30px rgba(0,150,220,0.5),  0 10px 34px rgba(0,50,110,0.30); }
 }
 
 /* ── Toast (new-data notification) ──────────────────── */
@@ -376,6 +410,11 @@ table.outlook-grid tr:hover td.div-name { color: var(--accent); }
     <svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
     <span>Cloud</span>
   </div>
+  <div class="layer-rail-sep"></div>
+  <div class="layer-btn" id="btn-division" data-layer="division" style="--lc:#005B9A;--lc-r:0;--lc-g:91;--lc-b:154">
+    <svg viewBox="0 0 24 24"><path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4l-5.5-2.5m0 16V1.5m0 2l-6-2.5"/></svg>
+    <span>Division</span>
+  </div>
 </div>
 
 <!-- Legend -->
@@ -445,9 +484,9 @@ const LEGENDS = {
   },
   temp: {
     title: 'Temperature', unit: '°C',
-    // yr.no full spectral: blue (cool) → cyan → green → yellow → orange → red
-    grad: 'linear-gradient(to right,#1478DC 0%,#00C8C8 17%,#14BE3C 33%,#A0D700 46%,#F5CD00 58%,#FF7800 72%,#DC1400 86%,#820000 100%)',
-    ticks: [{p:0,l:'18°'},{p:25,l:'24°'},{p:50,l:'30°'},{p:75,l:'36°'},{p:100,l:'42°'}],
+    // Ventusky warm scale, 0..50 °C (white → yellow → orange → red → dark red)
+    grad: 'linear-gradient(to right,#fafafa 0%,#faf5aa 20%,#ffdc00 40%,#ff8c00 60%,#e61400 80%,#780000 100%)',
+    ticks: [{p:0,l:'0°'},{p:20,l:'10'},{p:40,l:'20'},{p:60,l:'30'},{p:80,l:'40'},{p:100,l:'50°'}],
   },
   humidity: {
     title: 'Rel. Humidity 850 hPa', unit: '%',
@@ -496,6 +535,19 @@ map.getPane('labels').style.pointerEvents = 'none';
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
   pane: 'labels', maxZoom: 16,
 }).addTo(map);
+
+// Clickable division regions (Division layer mode) — pointer events ON.
+map.createPane('divinteract');
+map.getPane('divinteract').style.zIndex = 540;
+
+// Spotlight panes for the divisional outlook: 'fade' dims everything except the
+// hovered division; 'divline' draws that division's crisp outline above the fade.
+map.createPane('fade');
+map.getPane('fade').style.zIndex = 660;
+map.getPane('fade').style.pointerEvents = 'none';
+map.createPane('divline');
+map.getPane('divline').style.zIndex = 670;
+map.getPane('divline').style.pointerEvents = 'none';
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -683,7 +735,7 @@ class WindLayer {
   }
 
   _spawn() {
-    this._p = Array.from({length:800}, () => ({
+    this._p = Array.from({length:1100}, () => ({
       x: Math.random()*this._W, y: Math.random()*this._H,
       age: Math.random()*60, px:null, py:null,
     }));
@@ -703,13 +755,14 @@ class WindLayer {
     if (!this._on) return;
     this._id = requestAnimationFrame(() => this._loop());
     if (!this._w || this._W===0) return;
-    const ctx=this._ctx, MAX=60, SPD=0.25;
+    const ctx=this._ctx, MAX=70, SPD=0.25;
 
-    // Fade to transparent — keeps canvas clear so scalar overlays show through
+    // Fade to transparent — slower fade keeps longer trails (denser airflow look)
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillStyle = 'rgba(0,0,0,0.055)';
     ctx.fillRect(0, 0, this._W, this._H);
     ctx.globalCompositeOperation = 'source-over';
+    ctx.lineCap = 'round';
 
     for (const p of this._p) {
       const {u,v} = this._interp(p.x, p.y);
@@ -717,11 +770,16 @@ class WindLayer {
       const nx = p.x+u*SPD, ny = p.y-v*SPD;
 
       if (p.px!==null && spd>0.3 && nx>=0 && nx<=this._W && ny>=0 && ny<=this._H) {
-        // White streamlines — visible on both light basemap AND coloured overlays
-        const alpha = Math.sin(Math.PI * p.age/MAX) * Math.min(1, spd/6) * 0.82;
+        // Two-pass streamline: a dark halo makes it visible on the light basemap,
+        // a bright core makes it visible on dark/coloured layers.
+        const alpha = Math.sin(Math.PI * p.age/MAX) * Math.min(1, spd/4.5) * 0.95;
+        const w = Math.min(2.2, 0.8 + spd*0.09);
         ctx.beginPath(); ctx.moveTo(p.px,p.py); ctx.lineTo(nx,ny);
-        ctx.lineWidth = Math.min(1.5, 0.5 + spd*0.06);
-        ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+        ctx.lineWidth = w + 1.8;
+        ctx.strokeStyle = `rgba(14,52,100,${(alpha*0.42).toFixed(2)})`;   // dark halo
+        ctx.stroke();
+        ctx.lineWidth = w;
+        ctx.strokeStyle = `rgba(245,251,255,${alpha.toFixed(2)})`;        // bright core
         ctx.stroke();
       }
 
@@ -747,6 +805,10 @@ const pinIcon = L.divIcon({
 });
 
 map.on('click', async (e) => {
+  // In Division mode, a click that isn't on a division (didn't stopPropagation)
+  // means "tap empty area" → clear the spotlight. Skip the point-query card.
+  if (divisionMode) { clearHighlight(); return; }
+
   const {lat, lng:lon} = e.latlng;
   if (lat<BD.latMin || lat>BD.latMax || lon<BD.lonMin || lon>BD.lonMax) return;
 
@@ -800,10 +862,49 @@ function setActiveLayer(layer) {  // layer: PNG var name or null
 
 document.querySelectorAll('.layer-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (btn.dataset.layer === 'division') { toggleDivisionMode(); return; }
     const layer = btn.dataset.layer === 'wind' ? 'windspeed' : btn.dataset.layer;
     setActiveLayer(layer);
   });
 });
+
+// ─── Division layer mode — tap a division on the map to spotlight it ────────────
+let divisionMode = false;
+let _divInteract = null;
+
+async function toggleDivisionMode() {
+  divisionMode = !divisionMode;
+  document.getElementById('btn-division').classList.toggle('active', divisionMode);
+  if (!divisionMode) {
+    if (_divInteract) { map.removeLayer(_divInteract); _divInteract = null; }
+    clearHighlight();
+    return;
+  }
+  await _loadDivisions();
+  // Load outlook so the popup can show the 5-day strip
+  if (!_currentOutlook || runKey(_currentOutlook) !== runKey(state.run)) {
+    try {
+      const key = runKey(state.run);
+      const data = _outlookCache.get(key) ||
+        await (await fetch(`${API}/outlook/${state.run.run_date}/${state.run.run_hour}`, { cache: 'no-store' })).json();
+      _outlookCache.set(key, data); _currentOutlook = data;
+    } catch(_) {}
+  }
+  if (!_divGeo) return;
+  // Invisible-but-clickable division regions; a thin border hints where to tap.
+  _divInteract = L.geoJSON(_divGeo, {
+    pane: 'divinteract',
+    style: { color: 'rgba(0,91,154,0.35)', weight: 1, fill: true, fillOpacity: 0, fillColor: '#3DAAFF' },
+    onEachFeature: (f, layer) => {
+      layer.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        highlightDivision(f.properties.division);
+      });
+      layer.on('mouseover', () => { if (!_divFade) layer.setStyle({ fillOpacity: 0.12 }); });
+      layer.on('mouseout',  () => layer.setStyle({ fillOpacity: 0 }));
+    },
+  }).addTo(map);
+}
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 const slider  = document.getElementById('step-slider');
@@ -869,7 +970,10 @@ const COND_ICON = {
 // Presentation order (north → south, then east)
 const DIVISION_ORDER = ['Rangpur','Rajshahi','Mymensingh','Dhaka','Khulna','Barisal','Chattogram','Sylhet'];
 let _divGeo = null;        // divisions geojson (loaded once)
-let _divHighlight = null;  // current highlight layer
+let _divHighlight = null;  // current highlight outline
+let _divFade = null;       // spotlight fade mask (dims the rest)
+let _divPopup = null;      // current hover popup
+let _currentOutlook = null;// outlook data currently shown in the panel
 const _outlookCache = new Map();  // runKey -> outlook data
 
 async function _loadDivisions() {
@@ -878,21 +982,51 @@ async function _loadDivisions() {
   return _divGeo;
 }
 
+// Exterior rings of a division as [[lat,lng],…] arrays (holes for the fade mask)
+function _divExteriorRings(feat) {
+  const g = feat.geometry;
+  const polys = g.type === 'MultiPolygon' ? g.coordinates : [g.coordinates];
+  return polys.map(poly => poly[0].map(c => [c[1], c[0]]));
+}
+const _FADE_RECT = [[-10, 70], [-10, 115], [45, 115], [45, 70]];  // covers the view
+
 function highlightDivision(name) {
   if (!_divGeo) return;
   clearHighlight();
   const feat = _divGeo.features.find(f => f.properties.division === name);
   if (!feat) return;
-  _divHighlight = L.geoJSON(feat, {
-    pane: 'labels',
-    style: { color: '#005B9A', weight: 2.5, fillColor: '#3DAAFF', fillOpacity: 0.18 },
+
+  // Spotlight: a big white overlay with the division punched out as holes, so
+  // the rest of Bangladesh fades and only this division keeps full colour.
+  const rings = _divExteriorRings(feat);
+  _divFade = L.polygon([_FADE_RECT, ...rings], {
+    pane: 'fade', stroke: false, fillColor: '#F2F5F9', fillOpacity: 0.74,
+    interactive: false, fillRule: 'evenodd',
   }).addTo(map);
+
+  // Crisp outline of the division, above the fade
+  _divHighlight = L.geoJSON(feat, {
+    pane: 'divline',
+    style: { color: '#005B9A', weight: 2.5, fillColor: '#3DAAFF', fillOpacity: 0.10 },
+  }).addTo(map);
+
+  // Clean animated name label at the division centre
+  const center = _divHighlight.getBounds().getCenter();
+  _divPopup = L.popup({
+    className: 'div-popup', closeButton: false, autoClose: false,
+    closeOnClick: false, autoPan: false, offset: [0, 0],
+  }).setLatLng(center)
+    .setContent(`<div class="dp-name">${name}</div>`)
+    .openOn(map);
 }
 function clearHighlight() {
+  if (_divFade) { map.removeLayer(_divFade); _divFade = null; }
   if (_divHighlight) { map.removeLayer(_divHighlight); _divHighlight = null; }
+  if (_divPopup) { map.closePopup(_divPopup); _divPopup = null; }
 }
 
 function renderOutlook(data) {
+  _currentOutlook = data;
   document.getElementById('outlook-run').textContent =
     `ECMWF IFS · ${data.run_date.slice(0,4)}-${data.run_date.slice(4,6)}-${data.run_date.slice(6,8)} ${parseInt(data.run_hour)}z`;
 
@@ -928,8 +1062,8 @@ let _outlookPan = 0;   // px the map was shifted to clear the panel
 async function openOutlook() {
   const modal = document.getElementById('outlook-modal');
   modal.classList.add('show');
-  // Shift Bangladesh left so it clears the right-docked panel (wide screens)
-  _outlookPan = window.innerWidth > 900 ? 240 : 0;
+  // Shift Bangladesh right so it clears the left-docked panel (wide screens)
+  _outlookPan = window.innerWidth > 900 ? -240 : 0;
   if (_outlookPan) map.panBy([_outlookPan, 0], { animate: true });
   document.getElementById('outlook-body').innerHTML =
     '<div style="padding:40px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">Computing outlook…</div>';

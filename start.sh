@@ -20,5 +20,5 @@ mkdir -p data/incoming
 python3 scripts/watch_ingest.py --keep 6 || true
 
 echo ""
-echo "Starting FastAPI server at http://localhost:8000"
-~/.local/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+echo "Starting FastAPI server at http://localhost:9090"
+~/.local/bin/uvicorn app.main:app --host 0.0.0.0 --port 9090
